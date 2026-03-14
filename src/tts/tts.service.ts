@@ -18,7 +18,6 @@ export class TtsService {
     }
 
     const voiceId = this.config.get<string>('VOICE_ID');
-    console.log('VOICE_ID:', voiceId);
 
     if (!voiceId) {
       throw new Error('VOICE_ID is not set');
@@ -41,17 +40,13 @@ export class TtsService {
     const outputFormat = this.normalizeOutputFormat(input.outputFormat);
     const languageCode = (input.languageCode ?? 'en').trim();
 
-    const audioStream = await this.client.textToSpeech.convert(voiceId, {
+    const response = await this.client.textToSpeech.convertWithTimestamps(voiceId, {
       text,
       modelId,
       outputFormat,
       languageCode,
     });
-
-    const arrayBuffer = await new Response(
-      audioStream as unknown as ReadableStream,
-    ).arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const buffer = Buffer.from(response.audioBase64, 'base64');
 
     const dir = targetDir ?? this.outputDir;
     await mkdir(dir, { recursive: true });
@@ -67,18 +62,20 @@ export class TtsService {
       languageCode,
       bytes: buffer.length,
       filePath,
+      alignment: response.alignment ?? null,
+      normalizedAlignment: response.normalizedAlignment ?? null,
     };
   }
 
   private normalizeOutputFormat(
     value?: string,
-  ): ElevenLabs.TextToSpeechConvertRequestOutputFormat {
-    const fallback: ElevenLabs.TextToSpeechConvertRequestOutputFormat =
+  ): ElevenLabs.TextToSpeechConvertWithTimestampsRequestOutputFormat {
+    const fallback: ElevenLabs.TextToSpeechConvertWithTimestampsRequestOutputFormat =
       'mp3_44100_128';
     const v = (value ?? '').trim();
     if (!v) return fallback;
 
-    const allowed: ElevenLabs.TextToSpeechConvertRequestOutputFormat[] = [
+    const allowed: ElevenLabs.TextToSpeechConvertWithTimestampsRequestOutputFormat[] = [
       'mp3_44100_128',
       'mp3_44100_64',
       'mp3_22050_32',
@@ -89,7 +86,7 @@ export class TtsService {
     ];
 
     return (allowed as string[]).includes(v)
-      ? (v as ElevenLabs.TextToSpeechConvertRequestOutputFormat)
+      ? (v as ElevenLabs.TextToSpeechConvertWithTimestampsRequestOutputFormat)
       : fallback;
   }
 }

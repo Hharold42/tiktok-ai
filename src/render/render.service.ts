@@ -9,7 +9,19 @@ type GenerationPayload = {
   durationSec: number;
   keywords: string[];
   assets: Array<{ keyword: string; videos: any[] }>;
-  tts?: { filePath?: string };
+  tts?: {
+    filePath?: string;
+    alignment?: {
+      characters: string[];
+      characterStartTimesSeconds: number[];
+      characterEndTimesSeconds: number[];
+    } | null;
+    normalizedAlignment?: {
+      characters: string[];
+      characterStartTimesSeconds: number[];
+      characterEndTimesSeconds: number[];
+    } | null;
+  };
   voiceover?: string;
 };
 
@@ -263,25 +275,37 @@ export class RenderService {
   }
 
   private async maybeWriteSubtitles(payload: GenerationPayload, resultDir: string) {
+    const alignment = payload.tts?.alignment ?? payload.tts?.normalizedAlignment ?? null;
     const text = (payload.voiceover ?? '').trim();
     if (!text) return null;
 
-    const sentences = this.splitSentences(text);
-    if (sentences.length === 0) return null;
-
-    const total = Math.max(1, payload.durationSec || 1);
-    const per = total / sentences.length;
-    let start = 0;
-
     const lines: string[] = [];
-    sentences.forEach((s, i) => {
-      const end = i === sentences.length - 1 ? total : start + per;
-      lines.push(String(i + 1));
-      lines.push(`${this.toSrtTime(start)} --> ${this.toSrtTime(end)}`);
-      lines.push(s);
-      lines.push('');
-      start = end;
-    });
+
+    if (alignment?.characters?.length) {
+      const chunks = this.buildAlignedChunks(alignment);
+      chunks.forEach((c, i) => {
+        lines.push(String(i + 1));
+        lines.push(`${this.toSrtTime(c.start)} --> ${this.toSrtTime(c.end)}`);
+        lines.push(c.text);
+        lines.push('');
+      });
+    } else {
+      const sentences = this.splitSentences(text);
+      if (sentences.length === 0) return null;
+
+      const total = Math.max(1, payload.durationSec || 1);
+      const per = total / sentences.length;
+      let start = 0;
+
+      sentences.forEach((s, i) => {
+        const end = i === sentences.length - 1 ? total : start + per;
+        lines.push(String(i + 1));
+        lines.push(`${this.toSrtTime(start)} --> ${this.toSrtTime(end)}`);
+        lines.push(s);
+        lines.push('');
+        start = end;
+      });
+    }
 
     const subtitlePath = join(resultDir, 'subtitles.srt');
     await writeFile(subtitlePath, lines.join('\n'));
@@ -293,6 +317,46 @@ export class RenderService {
       .split(/(?<=[.!?])\s+/)
       .map((s) => s.trim())
       .filter(Boolean);
+  }
+
+  private buildAlignedChunks(alignment: {
+    characters: string[];
+    characterStartTimesSeconds: number[];
+    characterEndTimesSeconds: number[];
+  }) {
+    const { characters, characterStartTimesSeconds, characterEndTimesSeconds } = alignment;
+    const chunks: Array<{ text: string; start: number; end: number }> = [];
+    let buffer = '';
+    let chunkStart = 0;
+    let chunkEnd = 0;
+
+    for (let i = 0; i < characters.length; i += 1) {
+      const ch = characters[i];
+      const start = characterStartTimesSeconds[i] ?? chunkEnd;
+      const end = characterEndTimesSeconds[i] ?? start;
+
+      if (!buffer) {
+        chunkStart = start;
+      }
+
+      buffer += ch;
+      chunkEnd = end;
+
+      if (ch === ' ' || ch === '\n' || buffer.length >= 42) {
+        const text = buffer.trim();
+        if (text) {
+          chunks.push({ text, start: chunkStart, end: chunkEnd });
+        }
+        buffer = '';
+      }
+    }
+
+    const tail = buffer.trim();
+    if (tail) {
+      chunks.push({ text: tail, start: chunkStart, end: chunkEnd });
+    }
+
+    return chunks;
   }
 
   private toSrtTime(seconds: number) {
