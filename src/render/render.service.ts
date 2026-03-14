@@ -10,6 +10,7 @@ type GenerationPayload = {
   keywords: string[];
   assets: Array<{ keyword: string; videos: any[] }>;
   tts?: { filePath?: string };
+  voiceover?: string;
 };
 
 @Injectable()
@@ -115,12 +116,29 @@ export class RenderService {
       await this.copyFile(concatPath, finalPath);
     }
 
-    await writeFile(join(process.cwd(), 'result', 'latest.mp4'), await readFile(finalPath));
+    const subtitlePath = await this.maybeWriteSubtitles(payload, resultDir);
+    const finalWithSubsPath = join(resultDir, 'final_subs.mp4');
+    if (subtitlePath) {
+      await this.runFfmpeg([
+        '-y',
+        '-i',
+        finalPath,
+        '-vf',
+        `subtitles=${this.escapeFilterPath(subtitlePath)}:force_style='FontName=Arial,FontSize=48,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Outline=2,Shadow=0,Alignment=2,MarginV=60'`,
+        '-c:a',
+        'copy',
+        finalWithSubsPath,
+      ]);
+      await writeFile(join(process.cwd(), 'result', 'latest.mp4'), await readFile(finalWithSubsPath));
+    } else {
+      await writeFile(join(process.cwd(), 'result', 'latest.mp4'), await readFile(finalPath));
+    }
 
     return {
       generationId: payload.generationId,
       scenes,
-      finalPath,
+      finalPath: subtitlePath ? finalWithSubsPath : finalPath,
+      subtitles: subtitlePath ?? null,
     };
   }
 
@@ -242,5 +260,55 @@ export class RenderService {
   private async copyFile(src: string, dest: string) {
     const data = await readFile(src);
     await writeFile(dest, data);
+  }
+
+  private async maybeWriteSubtitles(payload: GenerationPayload, resultDir: string) {
+    const text = (payload.voiceover ?? '').trim();
+    if (!text) return null;
+
+    const sentences = this.splitSentences(text);
+    if (sentences.length === 0) return null;
+
+    const total = Math.max(1, payload.durationSec || 1);
+    const per = total / sentences.length;
+    let start = 0;
+
+    const lines: string[] = [];
+    sentences.forEach((s, i) => {
+      const end = i === sentences.length - 1 ? total : start + per;
+      lines.push(String(i + 1));
+      lines.push(`${this.toSrtTime(start)} --> ${this.toSrtTime(end)}`);
+      lines.push(s);
+      lines.push('');
+      start = end;
+    });
+
+    const subtitlePath = join(resultDir, 'subtitles.srt');
+    await writeFile(subtitlePath, lines.join('\n'));
+    return subtitlePath;
+  }
+
+  private splitSentences(text: string) {
+    return text
+      .split(/(?<=[.!?])\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  private toSrtTime(seconds: number) {
+    const s = Math.max(0, seconds);
+    const hh = Math.floor(s / 3600);
+    const mm = Math.floor((s % 3600) / 60);
+    const ss = Math.floor(s % 60);
+    const ms = Math.floor((s - Math.floor(s)) * 1000);
+    return `${this.pad(hh)}:${this.pad(mm)}:${this.pad(ss)},${this.pad(ms, 3)}`;
+  }
+
+  private pad(num: number, size = 2) {
+    return String(num).padStart(size, '0');
+  }
+
+  private escapeFilterPath(filePath: string) {
+    return filePath.replace(/\\/g, '/').replace(/:/g, '\\:');
   }
 }
