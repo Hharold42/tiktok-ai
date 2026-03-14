@@ -16,12 +16,40 @@ type GenerationPayload = {
 export class RenderService {
   private readonly ffmpegPath: string;
 
-  constructor() {
-    const localPath =
-      'C:\\Users\\torbe\\Downloads\\ffmpeg-8.0.1-full_build\\ffmpeg-8.0.1-full_build\\bin\\ffmpeg.exe';
+  // constructor() {
+  //   const localPath =
+  //     'C:\\Users\\torbe\\Downloads\\ffmpeg-8.0.1-full_build\\ffmpeg-8.0.1-full_build\\bin\\ffmpeg.exe';
 
-    this.ffmpegPath = existsSync(localPath) ? localPath : 'ffmpeg';
+  //   this.ffmpegPath = existsSync(localPath) ? localPath : 'ffmpeg';
+  // }
+
+  constructor() {
+    this.ffmpegPath = this.determineFfmpegPath();
+    console.log(`Using ffmpeg at: ${this.ffmpegPath}`); 
   }
+
+  private determineFfmpegPath(): string {
+    const possiblePaths = [
+      '/usr/bin/ffmpeg',           
+      '/usr/local/bin/ffmpeg',     
+      'ffmpeg',                    
+    ];
+
+    const windowsPath = 'C:\\Users\\torbe\\Downloads\\ffmpeg-8.0.1-full_build\\ffmpeg-8.0.1-full_build\\bin\\ffmpeg.exe';
+
+    if (process.platform === 'win32' && existsSync(windowsPath)) {
+      return windowsPath;
+    }
+
+    for (const path of possiblePaths) {
+      if (path === 'ffmpeg' || existsSync(path)) {
+        return path;
+      }
+    }
+
+    return 'ffmpeg';
+  }
+
   async renderLatestOr(id?: string) {
     const payload = await this.loadPayload(id);
     await this.ensureFfmpeg();
