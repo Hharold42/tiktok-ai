@@ -1,0 +1,17 @@
+{
+  "model": "gpt-4o-mini",
+  "script": "(Shot 1: Person looking frustrated at a computer)  \n🔍\"Stuck on a project?\"  \n(Shot 2: Coffee cup spilling)  \n☕️\"Thatt just makes it worse!\"  \n(Shot 3: Quick zoom on a brainstorming book)  \n📚\"Try this simple trick instead!\"  \n(Shot 4: Person scribbling ideas)  \n📝\"Write down your thoughts FAST!\"  \n(Shot 5: Timer starts counting down)  \n⏱️\"60 seconds! Don’t overthink it!\"  \n(Shot 6: Person smiling at the paper)  \nn✨\"Feel the clarity coming?\"  \n(Shot 7: Close-up of a lightbulb above their head)  \n💡\"Ideas are flowing!\"  \n(Shot 8: High-five with a friend)  \n🙌\"Get your creativity BACK!\"",
+  "keywords": [
+    "creativity",
+    "brainstorming",
+    "productivity",
+    "tips",
+    "tricks",
+    "inspiration",
+    "motivation",
+    "focus",
+    "time management",
+    "problem solving"
+  ],
+  "prompt": "A vibrant, fast-paced video style showcasing practical productivity tips with fun animations and relatable scenarios."
+}
