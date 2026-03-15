@@ -371,9 +371,10 @@ export class AppService {
     const results = await Promise.all(
       scenes.map(async (scene, index) => {
         const prompt = `${baseStyle} Scene: ${scene.text}. Keywords: ${scene.keywords.join(', ')}.`;
+        const seconds = String(perSceneSeconds) as '4' | '8' | '12';
         const download = await this.sora.createAndDownload({
           prompt,
-          seconds: String(perSceneSeconds),
+          seconds,
           size: opts.size,
           generationId: opts.generationId,
           sceneIndex: index,

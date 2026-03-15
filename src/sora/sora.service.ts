@@ -70,7 +70,7 @@ export class SoraService {
 
   async createAndDownload(input: {
     prompt: string;
-    seconds: string;
+    seconds: '4' | '8' | '12';
     size: '720x1280' | '1280x720';
     generationId: string;
     sceneIndex: number;
