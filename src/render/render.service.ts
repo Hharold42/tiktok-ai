@@ -8,7 +8,15 @@ type GenerationPayload = {
   generationId: string;
   durationSec: number;
   keywords: string[];
-  assets: Array<{ keyword: string; videos: any[] }>;
+  scenes?: Array<{ text: string; keywords: string[] }>;
+  assets: Array<{
+    sceneIndex: number;
+    keywords: string[];
+    query: string;
+    videos: any[];
+    localPath?: string;
+    source?: 'sora' | 'pexels';
+  }>;
   tts?: {
     filePath?: string;
     alignment?: {
@@ -163,31 +171,47 @@ export class RenderService {
   }
 
   private buildScenes(payload: GenerationPayload) {
-    const count = Math.max(1, Math.min(payload.keywords.length || 1, payload.assets.length || 1));
+    const sceneCount = payload.scenes?.length ?? 0;
+    const count = Math.max(1, Math.min(sceneCount || 1, payload.assets.length || 1));
     const duration = Math.max(3, Math.floor(payload.durationSec / count));
 
-    const scenes: Array<{ index: number; keyword: string; duration: number; video: any }> = [];
+    const scenes: Array<{
+      index: number;
+      keyword: string;
+      duration: number;
+      video: any;
+      localPath?: string;
+    }> = [];
     for (let i = 0; i < count; i += 1) {
-      const keyword = payload.keywords[i] ?? payload.keywords[0];
-      const assetGroup = payload.assets.find((a) => a.keyword === keyword) ?? payload.assets[i];
+      const scene = payload.scenes?.[i];
+      const keyword = scene?.keywords?.[0] ?? payload.keywords[i] ?? payload.keywords[0];
+      const assetGroup =
+        payload.assets.find((a) => a.sceneIndex === i) ??
+        payload.assets.find((a) => a.keywords.includes(keyword)) ??
+        payload.assets[i];
       const video = this.pickVideo(assetGroup?.videos ?? []);
       scenes.push({
         index: i,
         keyword,
         duration,
         video,
+        localPath: assetGroup?.localPath,
       });
     }
     return scenes;
   }
 
   private async downloadClips(
-    scenes: Array<{ index: number; keyword: string; duration: number; video: any }>,
+    scenes: Array<{ index: number; keyword: string; duration: number; video: any; localPath?: string }>,
     clipsDir: string,
   ) {
     const downloads: Array<{ path: string; duration: number }> = [];
 
     for (const scene of scenes) {
+      if (scene.localPath && existsSync(scene.localPath)) {
+        downloads.push({ path: scene.localPath, duration: scene.duration });
+        continue;
+      }
       if (!scene.video) continue;
       const file = this.pickVideoFile(scene.video);
       if (!file?.link) continue;

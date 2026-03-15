@@ -8,6 +8,10 @@ import { RenderController } from './render/render.controller';
 import { RenderService } from './render/render.service';
 import { HealthController } from './health/health.controller';
 import { HealthService } from './health/health.service';
+import { SoraController } from './sora/sora.controller';
+import { SoraService } from './sora/sora.service';
+import { RunwayController } from './runway/runway.controller';
+import { RunwayService } from './runway/runway.service';
 import { TtsController } from './tts/tts.controller';
 import { TtsService } from './tts/tts.service';
 
@@ -17,7 +21,23 @@ import { TtsService } from './tts/tts.service';
       isGlobal: true,
     }),
   ],
-  controllers: [AppController, PexelsController, TtsController, RenderController, HealthController],
-  providers: [AppService, PexelsService, TtsService, RenderService, HealthService],
+  controllers: [
+    AppController,
+    PexelsController,
+    TtsController,
+    RenderController,
+    HealthController,
+    SoraController,
+    RunwayController,
+  ],
+  providers: [
+    AppService,
+    PexelsService,
+    TtsService,
+    RenderService,
+    HealthService,
+    SoraService,
+    RunwayService,
+  ],
 })
 export class AppModule {}

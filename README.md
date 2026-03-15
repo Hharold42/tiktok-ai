@@ -33,6 +33,7 @@ Environment:
 OPENAI_API_KEY=your_key
 OPENAI_MODEL=gpt-4o-mini
 PEXELS_API_KEY=your_key
+RUNWAYML_API_SECRET=your_key
 ```
 
 Endpoint:
@@ -90,6 +91,51 @@ curl http://localhost:3000/health/pexels
 curl http://localhost:3000/health/elevenlabs
 curl http://localhost:3000/health/ffmpeg
 curl http://localhost:3000/health/all
+```
+
+Sora test (OpenAI video):
+
+```bash
+curl -X POST http://localhost:3000/sora/test \
+  -H "Content-Type: application/json" \
+  -d "{\"prompt\":\"A cinematic anime-style city at night, rain reflections, slow pan\",\"seconds\":\"8\",\"size\":\"720x1280\",\"model\":\"sora-2\"}"
+```
+
+
+Check job:
+
+```bash
+curl http://localhost:3000/sora/<id>
+```
+
+Download video:
+
+```bash
+curl -X POST http://localhost:3000/sora/<id>/download
+```
+
+Runway test:
+
+```bash
+curl -X POST http://localhost:3000/runway/test \
+  -H "Content-Type: application/json" \
+  -d "{\"promptText\":\"A serene mountain landscape at sunrise with mist rolling through the valleys\",\"ratio\":\"720:1280\",\"duration\":5,\"model\":\"gen4.5\"}"
+```
+
+Runway Veo test:
+
+```bash
+curl -X POST http://localhost:3000/runway/veo \
+  -H "Content-Type: application/json" \
+  -d "{\"promptText\":\"Vertical TikTok livestream scene...\",\"ratio\":\"720:1280\",\"duration\":6,\"model\":\"veo3.1\"}"
+```
+
+Runway Veo wedding test:
+
+```bash
+curl -X POST http://localhost:3000/runway/veo/wedding \
+  -H "Content-Type: application/json" \
+  -d "{}"
 ```
 
 ## Project setup

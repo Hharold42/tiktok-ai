@@ -9,6 +9,7 @@ import { GenerateRequestDto } from './dto/generate.dto';
 import { PexelsService } from './pexels/pexels.service';
 import { TtsService } from './tts/tts.service';
 import { RenderService } from './render/render.service';
+import { SoraService } from './sora/sora.service';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 
@@ -22,6 +23,7 @@ export class AppService {
     private readonly pexels: PexelsService,
     private readonly tts: TtsService,
     private readonly render: RenderService,
+    private readonly sora: SoraService,
   ) {
     const apiKey = this.config.get<string>('OPENAI_API_KEY');
     if (!apiKey) {
@@ -82,9 +84,28 @@ export class AppService {
                 minItems: 5,
                 maxItems: 10,
               },
+              scenes: {
+                type: 'array',
+                minItems: 5,
+                maxItems: 9,
+                items: {
+                  type: 'object',
+                  properties: {
+                    text: { type: 'string' },
+                    keywords: {
+                      type: 'array',
+                      items: { type: 'string' },
+                      minItems: 2,
+                      maxItems: 4,
+                    },
+                  },
+                  required: ['text', 'keywords'],
+                  additionalProperties: false,
+                },
+              },
               prompt: { type: 'string' },
             },
-            required: ['script', 'voiceover', 'keywords', 'prompt'],
+            required: ['script', 'voiceover', 'keywords', 'scenes', 'prompt'],
             additionalProperties: false,
           },
         },
@@ -102,6 +123,12 @@ export class AppService {
 
     const normalized = this.normalizeParsed(parsed);
 
+    const generationId = Date.now().toString();
+    const resourcesDir = join(process.cwd(), 'resources', generationId);
+    const resultDir = join(process.cwd(), 'result', generationId);
+    await mkdir(resourcesDir, { recursive: true });
+    await mkdir(resultDir, { recursive: true });
+
     const assetsPerKeyword = Number.isFinite(input.assetsPerKeyword)
       ? Math.max(1, Math.min(5, Math.round(input.assetsPerKeyword as number)))
       : 3;
@@ -114,23 +141,31 @@ export class AppService {
       : 12;
 
     let assetsError: string | null = null;
-    let assets = [] as Array<{ keyword: string; videos: any[] }>;
+    let assets = [] as Array<{
+      sceneIndex: number;
+      keywords: string[];
+      query: string;
+      videos: any[];
+      localPath?: string;
+      source: 'sora' | 'pexels';
+    }>;
     try {
-      assets = await this.fetchAssetsForKeywords(normalized.keywords, {
-        perKeyword: assetsPerKeyword,
-        orientation: assetsOrientation,
-        minDuration: assetsMinDuration,
-        maxDuration: assetsMaxDuration,
+      assets = await this.fetchSoraForScenes(normalized.scenes, {
+        durationSec,
+        size: '720x1280',
+        generationId,
       });
+      if (assets.length === 0) {
+        assets = await this.fetchAssetsForScenes(normalized.scenes, {
+          perKeyword: assetsPerKeyword,
+          orientation: assetsOrientation,
+          minDuration: assetsMinDuration,
+          maxDuration: assetsMaxDuration,
+        });
+      }
     } catch (err) {
       assetsError = err instanceof Error ? err.message : 'Pexels error';
     }
-
-    const generationId = Date.now().toString();
-    const resourcesDir = join(process.cwd(), 'resources', generationId);
-    const resultDir = join(process.cwd(), 'result', generationId);
-    await mkdir(resourcesDir, { recursive: true });
-    await mkdir(resultDir, { recursive: true });
 
     const ttsResult = await this.tts.synthesize(
       {
@@ -206,10 +241,11 @@ export class AppService {
       `Topic: ${input.topic}.`,
       'Generate:',
       '1) Script (short phrases by shots, with a hook in the first 2–3 seconds).',
-      '2) 5–10 keywords.',
-      '3) One text prompt for generating videos/images in a consistent style.',
-      '4) Separate voiceover text (natural narration, 10–25% shorter than script).',
-      'Return strict JSON with fields: script (string), voiceover (string), keywords (array of strings), prompt (string).',
+      '2) 5–10 overall keywords.',
+      '3) Scenes: 5–9 items, each with text and 2–4 keywords.',
+      '4) One text prompt for generating videos/images in a consistent style.',
+      '5) Separate voiceover text (natural narration, 10–25% shorter than script).',
+      'Return strict JSON with fields: script (string), voiceover (string), keywords (array of strings), scenes (array), prompt (string).',
     ].join('\n');
   }
 
@@ -257,7 +293,24 @@ export class AppService {
 
     const uniqueKeywords = Array.from(new Set(keywords)).slice(0, 10);
 
-    if (!script || !voiceover || !prompt || uniqueKeywords.length < 5) {
+    let scenes: Array<{ text: string; keywords: string[] }> = [];
+    if (Array.isArray(parsed.scenes)) {
+      scenes = parsed.scenes
+        .map((s) => {
+          const text = String((s as any)?.text ?? '').trim();
+          let sceneKeywords: string[] = [];
+          const raw = (s as any)?.keywords;
+          if (Array.isArray(raw)) {
+            sceneKeywords = raw.map((k) => String(k).trim()).filter(Boolean);
+          } else if (typeof raw === 'string') {
+            sceneKeywords = raw.split(',').map((k) => k.trim()).filter(Boolean);
+          }
+          return { text, keywords: sceneKeywords.slice(0, 4) };
+        })
+        .filter((s) => s.text && s.keywords.length >= 2);
+    }
+
+    if (!script || !voiceover || !prompt || uniqueKeywords.length < 5 || scenes.length < 5) {
       throw new InternalServerErrorException(
         'Model response missing required fields',
       );
@@ -267,12 +320,13 @@ export class AppService {
       script,
       voiceover,
       keywords: uniqueKeywords,
+      scenes,
       prompt,
     };
   }
 
-  private async fetchAssetsForKeywords(
-    keywords: string[],
+  private async fetchAssetsForScenes(
+    scenes: Array<{ text: string; keywords: string[] }>,
     opts: {
       perKeyword: number;
       orientation: 'landscape' | 'portrait' | 'square';
@@ -281,9 +335,10 @@ export class AppService {
     },
   ) {
     const results = await Promise.all(
-      keywords.map(async (keyword) => {
+      scenes.map(async (scene, index) => {
+        const query = scene.keywords[0] ?? scene.text;
         const response = await this.pexels.searchVideos({
-          query: keyword,
+          query,
           perPage: opts.perKeyword,
           orientation: opts.orientation,
           minDuration: opts.minDuration,
@@ -291,12 +346,56 @@ export class AppService {
         });
 
         return {
-          keyword,
+          sceneIndex: index,
+          keywords: scene.keywords,
+          query,
           videos: response.videos,
+          source: 'pexels' as const,
         };
       }),
     );
 
     return results;
+  }
+
+  private async fetchSoraForScenes(
+    scenes: Array<{ text: string; keywords: string[] }>,
+    opts: { durationSec: number; size: '720x1280' | '1280x720'; generationId: string },
+  ) {
+    const perSceneSeconds = this.pickSoraSeconds(
+      Math.max(1, Math.floor(opts.durationSec / Math.max(1, scenes.length))),
+    );
+    const baseStyle =
+      'Simple, realistic scene shot on a high-end camera. Natural lighting, stable motion, no artifacts, clean composition, cinematic but minimal, no text overlays.';
+
+    const results = await Promise.all(
+      scenes.map(async (scene, index) => {
+        const prompt = `${baseStyle} Scene: ${scene.text}. Keywords: ${scene.keywords.join(', ')}.`;
+        const download = await this.sora.createAndDownload({
+          prompt,
+          seconds: String(perSceneSeconds),
+          size: opts.size,
+          generationId: opts.generationId,
+          sceneIndex: index,
+        });
+
+        return {
+          sceneIndex: index,
+          keywords: scene.keywords,
+          query: scene.keywords[0] ?? scene.text,
+          videos: [],
+          localPath: download.filePath,
+          source: 'sora' as const,
+        };
+      }),
+    );
+
+    return results;
+  }
+
+  private pickSoraSeconds(target: number): 4 | 8 | 12 {
+    if (target <= 4) return 4;
+    if (target <= 8) return 8;
+    return 12;
   }
 }
